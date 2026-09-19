@@ -1,0 +1,11 @@
+# Dense 9B model. Fits entirely on one GPU (~5.2 GiB), so it's fastest run
+# on a single card rather than split — splitting it across two GPUs cost
+# ~12% throughput in testing (56 tok/s split vs 64 tok/s on one 3070).
+name: Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M
+file: Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf
+url: TODO  # fill in the download URL (e.g. a HuggingFace file link)
+runner: llamacpp
+llamacpp:
+  mode: cli          # cli | server
+  ctx: 16384
+  extra_args: ["-sm", "none", "-mg", "0"]  # single GPU, no cross-GPU split

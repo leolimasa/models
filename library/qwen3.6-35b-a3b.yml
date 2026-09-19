@@ -1,0 +1,14 @@
+# MoE model (256 experts, 8 active) — too big for one GPU (~18.9 GiB).
+# `-ncmoe 6` keeps most expert weights on CPU so the rest fits on GPU.
+# `-ts 1,1` overrides llama.cpp's default VRAM-proportional layer split
+# (7.8 GiB : 11.9 GiB), which packs the 3060 (CUDA1) so full that there's
+# no room left for the compute buffer -> OOM at any real context size.
+# Verified working at ctx 8192: 23.8 tok/s generation, no OOM.
+name: Qwen3.6-35B-A3B-uncensored-heretic-MXFP4_MOE
+file: Qwen3.6-35B-A3B-uncensored-heretic-MXFP4_MOE.gguf
+url: TODO  # fill in the download URL (e.g. a HuggingFace file link)
+runner: llamacpp
+llamacpp:
+  mode: cli
+  ctx: 8192
+  extra_args: ["-ncmoe", "6", "-ts", "1,1"]
