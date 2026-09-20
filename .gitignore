@@ -7,3 +7,7 @@ __pycache__/
 # is runtime state pi generates itself and must never be committed.
 /.pi/agent/*
 !/.pi/agent/models.json
+
+# Open WebUI: DATA_DIR points here (see flake.nix). All generated runtime
+# state (sqlite db, uploads, vector store), nothing to track.
+/.open-webui/

@@ -1,8 +1,33 @@
 # Dense hybrid attention/SSM model (65 layers, full_attention_interval=4 --
 # only 1 in 4 layers is full attention, the rest are linear/SSM with
-# fixed-size state). At 13.3 GiB it needs both GPUs; the default layer
-# split (no -sm/-ts override) already lands within noise of every -ts ratio
-# tried (~22 tok/s regardless), so nothing pinned there.
+# fixed-size state). At 13.3 GiB it needs both GPUs.
+#
+# `-sm tensor` is the single biggest win here: 22.6 -> 35.8 tok/s (+58%).
+# The default layer split runs the GPUs *sequentially* -- one holds layers
+# 0..n, the other n+1..64, and each waits on the other -- and it sizes the
+# split by VRAM, handing the 3070 only 4.4 GiB of the 12.7 GiB of weights
+# while the slower 3060 carried 8.3 GiB. So the faster card sat idle with
+# ~3 GiB free. `-sm tensor` splits every tensor evenly instead (6.4 GiB per
+# GPU) and both cards compute at once. This is why no `-ts` ratio ever
+# moved the old number much: rebalancing a sequential split is worth a few
+# percent, running the two cards in parallel is worth 58%.
+#
+# `-sm row` would also parallelize, but it can't load at all here:
+# "device CUDA0 does not support split buffers" (no PCIe P2P between these
+# two GeForce cards). `-ts` is not usable with `-sm tensor` either -- it
+# aborts in the meta backend -- but the even split it picks on its own is
+# already what we want, since the cards are close in bandwidth (3070
+# 448 GB/s, 3060 360 GB/s).
+#
+# `-ub 256 -b 1024` is a memory fix, not a speed knob. Tensor split puts
+# 6.4 GiB of weights on the 3070's 7.84 GiB, and at ctx 32768 the f16 KV
+# cache pushes it 154 MiB over -> cudaMalloc OOM on load. Halving the
+# ubatch halves the compute buffer and buys that back. It costs ~5% prompt
+# throughput (636 -> 605 tok/s at depth 16k) and nothing on generation.
+# The alternative, cache_type q8_0 at full ubatch, also fits but is ~6%
+# *slower* to generate at depth (31.9 vs 33.7 tok/s) -- KV quant is a bad
+# trade on this model because the hybrid architecture keeps the KV cache
+# small to begin with (only 16 of 65 layers are full attention).
 #
 # `--jinja` is required, not optional: without it, chat-formatted requests
 # (server /v1/chat/completions, and interactive -cnv mode) crash with
@@ -10,11 +35,9 @@
 # completion (no template) works fine either way, which is why this was
 # easy to miss with a quick smoke test.
 #
-# ctx 32768 chosen because the hybrid architecture makes context nearly
-# free: going from 8192 -> 32768 (4x) cost ~1.5 GiB total across both GPUs
-# and generation speed was unchanged (22.3 tok/s at both). 65536 also
-# loads and runs, but leaves under 1.2 GiB combined free across both GPUs
-# -- too tight to be a safe default.
+# ctx 32768 kept from the previous tuning: the hybrid architecture makes
+# context nearly free (8192 -> 32768 costs ~1.5 GiB total and no speed),
+# and generation holds up at depth -- 35.8 tok/s at 0 ctx, 33.7 at 16k.
 name: Qwen3.8-27B-UD-IQ4_XS
 file: Qwen3.8-27B-UD-IQ4_XS.gguf
 url: https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-IQ4_XS.gguf?download=true
@@ -22,4 +45,4 @@ runner: llamacpp
 llamacpp:
   mode: cli
   ctx: 32768
-  extra_args: ["--jinja"]
+  extra_args: ["--jinja", "-sm", "tensor", "-ub", "256", "-b", "1024"]
