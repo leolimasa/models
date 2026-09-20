@@ -1,0 +1,22 @@
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    # host.docker.internal (bridge networking's usual way to reach the host)
+    # doesn't work here: this host's NixOS firewall drops incoming traffic
+    # from the docker0 bridge to any port that isn't explicitly opened, and
+    # llama-server's port was never opened for that (only used from
+    # 127.0.0.1 so far). network_mode: host sidesteps the bridge entirely --
+    # the container shares the host's network namespace, so 127.0.0.1
+    # inside the container really is the host's loopback.
+    network_mode: host
+    volumes:
+      - ./.open-webui/data:/app/backend/data
+    environment:
+      # No port mapping in host mode; this is what open-webui itself binds
+      # to. llama-server (models.py server) already owns host port 8080.
+      PORT: "3000"
+      OPENAI_API_BASE_URL: "http://127.0.0.1:8080/v1"
+      OPENAI_API_KEY: "none" # llama-server ignores this unless run with --api-key
+      ENABLE_OLLAMA_API: "false" # nothing here uses Ollama

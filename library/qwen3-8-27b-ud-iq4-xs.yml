@@ -2,32 +2,49 @@
 # only 1 in 4 layers is full attention, the rest are linear/SSM with
 # fixed-size state). At 13.3 GiB it needs both GPUs.
 #
-# `-sm tensor` is the single biggest win here: 22.6 -> 35.8 tok/s (+58%).
+# `-sm tensor` is the win here: 22.6 -> 34.1 tok/s generation (+51%),
+# measured back-to-back against the old config on the same machine.
 # The default layer split runs the GPUs *sequentially* -- one holds layers
 # 0..n, the other n+1..64, and each waits on the other -- and it sizes the
 # split by VRAM, handing the 3070 only 4.4 GiB of the 12.7 GiB of weights
 # while the slower 3060 carried 8.3 GiB. So the faster card sat idle with
 # ~3 GiB free. `-sm tensor` splits every tensor evenly instead (6.4 GiB per
-# GPU) and both cards compute at once. This is why no `-ts` ratio ever
-# moved the old number much: rebalancing a sequential split is worth a few
-# percent, running the two cards in parallel is worth 58%.
+# GPU) and both cards compute at once. That also explains why no `-ts`
+# ratio ever moved the old number much: rebalancing a sequential split is
+# worth a few percent, running the two cards in parallel is worth ~51%.
 #
-# `-sm row` would also parallelize, but it can't load at all here:
+# `-sm row` would also parallelize but cannot load at all here:
 # "device CUDA0 does not support split buffers" (no PCIe P2P between these
 # two GeForce cards). `-ts` is not usable with `-sm tensor` either -- it
-# aborts in the meta backend -- but the even split it picks on its own is
-# already what we want, since the cards are close in bandwidth (3070
-# 448 GB/s, 3060 360 GB/s).
+# aborts in the meta backend -- so the even split is not tunable.
 #
-# `-ub 256 -b 1024` is a memory fix, not a speed knob. Tensor split puts
-# 6.4 GiB of weights on the 3070's 7.84 GiB, and at ctx 32768 the f16 KV
-# cache pushes it 154 MiB over -> cudaMalloc OOM on load. Halving the
-# ubatch halves the compute buffer and buys that back. It costs ~5% prompt
-# throughput (636 -> 605 tok/s at depth 16k) and nothing on generation.
-# The alternative, cache_type q8_0 at full ubatch, also fits but is ~6%
-# *slower* to generate at depth (31.9 vs 33.7 tok/s) -- KV quant is a bad
-# trade on this model because the hybrid architecture keeps the KV cache
-# small to begin with (only 16 of 65 layers are full attention).
+# The catch: an even split is bound by the *smaller* card. 6.4 GiB of
+# weights on the 3070's 7.84 GiB leaves ~1.4 GiB for KV + compute, while
+# the 3060 idles with ~4.7 GiB unused. Everything below is about living
+# inside that 1.4 GiB; none of it is a speed knob.
+#
+#   cache_type q8_0  -- f16 KV at ctx 32768 does NOT fit. It OOMs at load
+#     in server mode (299 MiB short) and, worse, loads in cli mode and then
+#     dies *mid-generation* with "CUDA error: out of memory". A single
+#     short cli run is not enough to catch this: test server mode, which
+#     needs ~300 MiB more than cli. q8_0 halves the KV and costs ~6%
+#     generation at depth (33.7 -> 31.9 tok/s at 16k) -- the price of
+#     keeping ctx 32768.
+#   -ub 256 -b 1024  -- halves the compute buffer. Costs ~5% prompt
+#     throughput vs -ub 512 and nothing on generation, and buys back
+#     enough headroom to be safe rather than lucky: peak GPU0 during a
+#     28k-token request is 7715 MiB with -ub 256 vs 7777 MiB with -ub 512,
+#     against the 7837 MiB at which the f16 config died. -b 1024 vs 2048
+#     measured identical (620 vs 618 tok/s pp512); it is kept only to hold
+#     the logical batch down, and that is the combination stress-tested.
+#
+# Net effect vs the old layer-split config, same machine, same run:
+#   generation  22.58 -> 34.10 tok/s  (+51%)   <- what you actually wait on
+#   prompt     661.21 -> 610.77 tok/s (-7.6%)  <- the price, from -ub 256
+# Generation at depth holds at 31.2 tok/s with 16k of context in the KV.
+#
+# Verified (not just "it started"): server mode, ctx 32768, a 28113-token
+# prompt + 128 generated tokens, no OOM, VRAM sampled throughout.
 #
 # `--jinja` is required, not optional: without it, chat-formatted requests
 # (server /v1/chat/completions, and interactive -cnv mode) crash with
@@ -36,8 +53,8 @@
 # easy to miss with a quick smoke test.
 #
 # ctx 32768 kept from the previous tuning: the hybrid architecture makes
-# context nearly free (8192 -> 32768 costs ~1.5 GiB total and no speed),
-# and generation holds up at depth -- 35.8 tok/s at 0 ctx, 33.7 at 16k.
+# context cheap (only 16 of 65 layers hold a KV cache at all) and
+# generation holds up at depth -- 34.1 tok/s at 0 ctx, 31.2 at 16k.
 name: Qwen3.8-27B-UD-IQ4_XS
 file: Qwen3.8-27B-UD-IQ4_XS.gguf
 url: https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-IQ4_XS.gguf?download=true
@@ -45,4 +62,5 @@ runner: llamacpp
 llamacpp:
   mode: cli
   ctx: 32768
+  cache_type: q8_0
   extra_args: ["--jinja", "-sm", "tensor", "-ub", "256", "-b", "1024"]
