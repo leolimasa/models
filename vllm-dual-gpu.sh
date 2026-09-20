@@ -47,13 +47,23 @@ GPU=1 NAME=vllm-gpu1 PORT=8001 "$DIR/vllm.sh" serve "$MODEL" \
   --served-model-name llama3.1-8b-awq \
   --max-model-len 28672 \
   > "$DIR/.vllm/gpu1.log" 2>&1 &
+PID1=$!
 
 GPU=0 NAME=vllm-gpu0 PORT=8000 "$DIR/vllm.sh" serve "$MODEL" \
   --served-model-name llama3.1-8b-awq \
   --max-model-len 2048 \
   --gpu-memory-utilization 0.97 \
   > "$DIR/.vllm/gpu0.log" 2>&1 &
+PID0=$!
 
 echo "starting -- gpu0 (3070): http://${HOST_IP}:8000  gpu1 (3060): http://${HOST_IP}:8001  (tailnet only)"
-echo "tailing .vllm/gpu0.log and .vllm/gpu1.log until both are ready; Ctrl+C to stop both"
-wait
+echo "Ctrl+C to stop both"
+
+# Stream both logs to stdout. A third background job, deliberately not
+# among the PIDs `wait` below blocks on -- otherwise Ctrl+C would have to
+# kill `tail` too before the script could exit.
+tail -n +1 -f "$DIR/.vllm/gpu0.log" "$DIR/.vllm/gpu1.log" &
+TAILPID=$!
+
+wait "$PID0" "$PID1"
+kill "$TAILPID" 2>/dev/null || true
