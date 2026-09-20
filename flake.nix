@@ -43,7 +43,7 @@
           echo "--- models dev shell ---"
           echo "models.py list | run [name] | server [name] | download [name]   (names come from library/*.yml)"
           echo "pi is configured with a local-llamacpp/local model -> whatever 'models.py server' is currently running"
-          echo "Open WebUI: docker compose up -d   (see docker-compose.yml)"
+          echo "Open WebUI / vLLM: docker compose up -d   (see docker-compose.yml)"
         '';
       };
 
