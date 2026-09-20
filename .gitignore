@@ -1,3 +1,9 @@
 /weights/
 __pycache__/
 *.pyc
+
+# pi.dev console harness: PI_CODING_AGENT_DIR points here (see flake.nix).
+# Only models.json is ours; everything else (auth.json, sessions/, npm/, ...)
+# is runtime state pi generates itself and must never be committed.
+/.pi/agent/*
+!/.pi/agent/models.json

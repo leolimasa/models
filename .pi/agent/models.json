@@ -1,0 +1,17 @@
+{
+  "providers": {
+    "local-llamacpp": {
+      "baseUrl": "http://127.0.0.1:8080/v1",
+      "api": "openai-completions",
+      "apiKey": "none",
+      "models": [
+        {
+          "id": "local",
+          "name": "models.py server",
+          "contextWindow": 8192,
+          "maxTokens": 4096
+        }
+      ]
+    }
+  }
+}

@@ -4,21 +4,27 @@
 Usage:
     models.py list
     models.py run [name] [-- extra llama.cpp args...]
+    models.py server [name] [-- extra llama.cpp args...]
     models.py download [name|url]
 
 <name> is a library/*.yml filename (without extension), e.g. "qwen3.5-9b".
-If omitted from run/download, an interactive picker lets you choose one
-(arrow keys, vim j/k, or type a digit to jump to that row; Enter confirms).
+If omitted from run/server/download, an interactive picker lets you choose
+one (arrow keys, vim j/k, or type a digit to jump to that row; Enter
+confirms).
+
+`server` always runs in server mode regardless of the .yml's `mode` or the
+MODE env var. For the llamacpp runner that's `llama-server`, which exposes
+an OpenAI-compatible API on localhost (see PORT below).
 
 If `download` is given a URL instead of a name, a new library/<slug>.yml is
 created for it (slug derived from the URL's filename) before downloading.
 
-Env vars for `run` (override the .yml):
-    MODE        cli | server                     (default: from .yml, else cli)
+Env vars for `run`/`server` (override the .yml):
+    MODE        cli | server                     (run only; server always forces server)
     CTX         context window                   (default: from .yml, else 8192)
     THREADS     CPU threads                       (default: 8)
     CACHE_TYPE  KV-cache quantization, e.g. q8_0  (default: none = f16)
-    PROMPT      one-shot prompt (cli mode) -> runs non-interactively and exits
+    PROMPT      one-shot prompt (run, cli mode)   -> runs non-interactively and exits
     NPREDICT    max tokens to generate            (default: -1 = until stop)
     PORT        server port                       (default: 8080)
 
@@ -203,9 +209,9 @@ def ensure_weights(entry):
     return dest, False
 
 
-def build_llamacpp_command(entry, model_path, passthrough):
+def build_llamacpp_command(entry, model_path, passthrough, force_mode=None):
     cfg = entry.get("llamacpp", {})
-    mode = os.environ.get("MODE", cfg.get("mode", "cli"))
+    mode = force_mode or os.environ.get("MODE", cfg.get("mode", "cli"))
     ctx = os.environ.get("CTX", str(cfg.get("ctx", 8192)))
     threads = os.environ.get("THREADS", "8")
     cache_type = os.environ.get("CACHE_TYPE", cfg.get("cache_type", ""))
@@ -267,21 +273,29 @@ def cmd_download(args):
         print(f"{entry['name']}: downloaded")
 
 
-def cmd_run(args):
-    name = resolve_name(args.model)
+def start(model_arg, passthrough, label, force_mode=None):
+    name = resolve_name(model_arg)
     entry = load_entry(name)
     runner = entry.get("runner")
     if runner not in RUNNERS:
         sys.exit(f"error: unsupported runner '{runner}' (known: {', '.join(RUNNERS)})")
 
     model_path, _ = ensure_weights(entry)
-    command = RUNNERS[runner](entry, model_path, args.passthrough)
+    command = RUNNERS[runner](entry, model_path, passthrough, force_mode=force_mode)
 
-    print("=== models.py run ===")
+    print(f"=== models.py {label} ===")
     print(f"  model : {entry['name']}")
     print(f"  cmd   : {' '.join(command)}")
     print("======================")
     os.execvp(command[0], command)
+
+
+def cmd_run(args):
+    start(args.model, args.passthrough, "run")
+
+
+def cmd_server(args):
+    start(args.model, args.passthrough, "server", force_mode="server")
 
 
 def main():
@@ -301,6 +315,10 @@ def main():
     p_run = subparsers.add_parser("run", help="run a model (interactive picker if name omitted)")
     p_run.add_argument("model", nargs="?", default=None)
     p_run.set_defaults(func=cmd_run)
+
+    p_server = subparsers.add_parser("server", help="run a model in server mode (interactive picker if name omitted)")
+    p_server.add_argument("model", nargs="?", default=None)
+    p_server.set_defaults(func=cmd_server)
 
     p_download = subparsers.add_parser("download", help="download a model (interactive picker if name omitted)")
     p_download.add_argument("model", nargs="?", default=None)

@@ -1,0 +1,25 @@
+# Dense hybrid attention/SSM model (65 layers, full_attention_interval=4 --
+# only 1 in 4 layers is full attention, the rest are linear/SSM with
+# fixed-size state). At 13.3 GiB it needs both GPUs; the default layer
+# split (no -sm/-ts override) already lands within noise of every -ts ratio
+# tried (~22 tok/s regardless), so nothing pinned there.
+#
+# `--jinja` is required, not optional: without it, chat-formatted requests
+# (server /v1/chat/completions, and interactive -cnv mode) crash with
+# "std::bad_alloc" applying this model's Jinja chat template. Raw -p
+# completion (no template) works fine either way, which is why this was
+# easy to miss with a quick smoke test.
+#
+# ctx 32768 chosen because the hybrid architecture makes context nearly
+# free: going from 8192 -> 32768 (4x) cost ~1.5 GiB total across both GPUs
+# and generation speed was unchanged (22.3 tok/s at both). 65536 also
+# loads and runs, but leaves under 1.2 GiB combined free across both GPUs
+# -- too tight to be a safe default.
+name: Qwen3.8-27B-UD-IQ4_XS
+file: Qwen3.8-27B-UD-IQ4_XS.gguf
+url: https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-UD-IQ4_XS.gguf?download=true
+runner: llamacpp
+llamacpp:
+  mode: cli
+  ctx: 32768
+  extra_args: ["--jinja"]

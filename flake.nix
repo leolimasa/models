@@ -28,12 +28,20 @@
           # Runs models.py (needs PyYAML to read library/*.yml)
           pythonEnv
           pkgs.git
+          # pi.dev console harness for LLMs (`pi` command)
+          pkgs.pi-coding-agent
         ];
 
         shellHook = ''
           export ENV_NAME="$ENV_NAME models"
+          # Project-local pi.dev config, not ~/.pi/agent: keeps its model
+          # config (.pi/agent/models.json) tracked in the repo and its
+          # runtime state (auth.json, sessions/, npm/, ...) out of it.
+          export PI_CODING_AGENT_DIR="$PWD/.pi/agent"
+          mkdir -p "$PI_CODING_AGENT_DIR"
           echo "--- models dev shell ---"
-          echo "models.py list | run [name] | download [name]   (names come from library/*.yml)"
+          echo "models.py list | run [name] | server [name] | download [name]   (names come from library/*.yml)"
+          echo "pi is configured with a local-llamacpp/local model -> whatever 'models.py server' is currently running"
         '';
       };
 

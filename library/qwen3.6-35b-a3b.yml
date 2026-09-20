@@ -6,7 +6,7 @@
 # Verified working at ctx 8192: 23.8 tok/s generation, no OOM.
 name: Qwen3.6-35B-A3B-uncensored-heretic-MXFP4_MOE
 file: Qwen3.6-35B-A3B-uncensored-heretic-MXFP4_MOE.gguf
-url: TODO  # fill in the download URL (e.g. a HuggingFace file link)
+url: https://huggingface.co/noctrex/Qwen3.6-35B-A3B-uncensored-heretic-MXFP4_MOE-GGUF/resolve/main/Qwen3.6-35B-A3B-uncensored-heretic-MXFP4_MOE.gguf
 runner: llamacpp
 llamacpp:
   mode: cli
