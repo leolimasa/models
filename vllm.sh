@@ -19,6 +19,11 @@
 #              GPUs visible) -- run one instance per GPU for data-parallel
 #              replicas, since this host's 3070+3060 are too different in
 #              size/speed for tensor parallelism to make sense across them
+#   HOST_IP    host IP to bind the published port to (default: this host's
+#              Tailscale IP, via `tailscale ip -4`) -- binds only that
+#              interface, not 0.0.0.0, so the server is reachable over the
+#              tailnet but not the LAN or public internet. Set to 0.0.0.0
+#              to go back to all-interfaces, or another IP to bind elsewhere.
 #   HF_TOKEN   forwarded in if set, for gated HuggingFace models
 #
 # Requires GPU passthrough (nvidia-container-toolkit + CDI) on the host --
@@ -32,6 +37,12 @@ set -euo pipefail
 
 PORT="${PORT:-8000}"
 NAME="${NAME:-vllm}"
+HOST_IP="${HOST_IP:-$(tailscale ip -4 2>/dev/null)}"
+if [[ -z "$HOST_IP" ]]; then
+  echo "error: could not determine Tailscale IP (is 'tailscale up' active?)." >&2
+  echo "       set HOST_IP explicitly to override, e.g. HOST_IP=0.0.0.0 for all interfaces." >&2
+  exit 1
+fi
 CACHE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)/.vllm/hf-cache"
 mkdir -p "$CACHE_DIR"
 
@@ -44,7 +55,7 @@ args=(
   # extra "serve" positional and errors on the real model as unrecognized.
   --entrypoint vllm
   --device "nvidia.com/gpu=${GPU:-all}"
-  -p "${PORT}:8000"
+  -p "${HOST_IP}:${PORT}:8000"
   -v "${CACHE_DIR}:/root/.cache/huggingface"
   # This host's two GPUs (3070 + 3060) are different models; vLLM warns
   # without this and PCI_BUS_ID is the deterministic, driver-agreed order.

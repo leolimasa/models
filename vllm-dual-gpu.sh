@@ -30,6 +30,13 @@ DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 MODEL="hugging-quants/Meta-Llama-3.1-8B-Instruct-AWQ-INT4"
 mkdir -p "$DIR/.vllm"
 
+HOST_IP="${HOST_IP:-$(tailscale ip -4 2>/dev/null)}"
+if [[ -z "$HOST_IP" ]]; then
+  echo "error: could not determine Tailscale IP (is 'tailscale up' active?)." >&2
+  exit 1
+fi
+export HOST_IP
+
 cleanup() {
   echo "stopping vllm-gpu0 vllm-gpu1 ..."
   docker rm -f vllm-gpu0 vllm-gpu1 >/dev/null 2>&1 || true
@@ -47,6 +54,6 @@ GPU=0 NAME=vllm-gpu0 PORT=8000 "$DIR/vllm.sh" serve "$MODEL" \
   --gpu-memory-utilization 0.97 \
   > "$DIR/.vllm/gpu0.log" 2>&1 &
 
-echo "starting -- gpu0 (3070): http://127.0.0.1:8000  gpu1 (3060): http://127.0.0.1:8001"
+echo "starting -- gpu0 (3070): http://${HOST_IP}:8000  gpu1 (3060): http://${HOST_IP}:8001  (tailnet only)"
 echo "tailing .vllm/gpu0.log and .vllm/gpu1.log until both are ready; Ctrl+C to stop both"
 wait
